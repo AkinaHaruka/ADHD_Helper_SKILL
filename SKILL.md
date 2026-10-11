@@ -123,7 +123,7 @@ description: >
 ### 参数约定
 
 - 课程查询日期使用 `{YYYY-MM-DD}` 格式。
-- 日程的 `{Unix 时间戳}` 为整数秒级 Unix 时间戳；`{持续分钟数}` 为整数分钟。
+- 日程时间使用 `{YYYY-MM-DD-HH-MM}` 格式，例如 `2026-10-11-09-30`；`{持续分钟数}` 为整数分钟。
 - 名称、地点等含空格的参数用引号包裹。创建或修改日程前，先与用户确认必要信息。
 
 ### 使用工具前
@@ -158,13 +158,13 @@ description: >
 
 #### 新建日程
 
-`python3 ./scripts/tasks.py add {名称} {地点} {Unix 时间戳} {持续分钟数} {优先级}`
+`python3 ./scripts/tasks.py add {名称} {地点} {YYYY-MM-DD-HH-MM} {持续分钟数} {优先级}`
 
 命令会输出新日程的 ID，后续修改或删除时使用该 ID。
 
 #### 修改日程
 
-`python3 ./scripts/tasks.py update {日程 ID} [--name {名称}] [--location {地点}] [--time {Unix 时间戳}] [--during {持续分钟数}] [--priority {优先级}]`
+`python3 ./scripts/tasks.py update {日程 ID} [--name {名称}] [--location {地点}] [--time {YYYY-MM-DD-HH-MM}] [--during {持续分钟数}] [--priority {优先级}]`
 
 只传入需要变更的选项。修改时间时，工具会自动将日程移至对应日期。
 

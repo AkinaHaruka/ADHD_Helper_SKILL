@@ -13,13 +13,21 @@ from typing import Optional
 TASKS_DIR = Path(__file__).resolve().parent / "data" / "tasks"
 
 
-def _day_for_timestamp(timestamp: int) -> str:
-    if isinstance(timestamp, bool) or not isinstance(timestamp, int):
-        raise ValueError("日程时间必须是整数时间戳。")
+def _parse_time(value: str) -> str:
+    """验证并规范化日程时间。"""
+    if not isinstance(value, str):
+        raise ValueError("日程时间必须使用 YYYY-MM-DD-HH-MM 格式。")
     try:
-        return datetime.fromtimestamp(timestamp).strftime("%Y%m%d")
-    except (OverflowError, OSError, ValueError) as error:
-        raise ValueError("日程时间不是有效的时间戳。") from error
+        parsed = datetime.strptime(value, "%Y-%m-%d-%H-%M")
+    except ValueError as error:
+        raise ValueError("日程时间必须使用 YYYY-MM-DD-HH-MM 格式。") from error
+    if parsed.strftime("%Y-%m-%d-%H-%M") != value:
+        raise ValueError("日程时间必须使用 YYYY-MM-DD-HH-MM 格式。")
+    return value
+
+
+def _day_for_time(value: str) -> str:
+    return _parse_time(value)[:10].replace("-", "")
 
 
 def _path_for_day(day: str) -> Path:
@@ -88,9 +96,10 @@ def _garbage_collect() -> None:
             path.unlink()
 
 
-def add(name: str, location: str, time: int, during: int, priority: str) -> int:
+def add(name: str, location: str, time: str, during: int, priority: str) -> int:
     """创建日程并返回新日程 ID。"""
-    day_path = _path_for_day(_day_for_timestamp(time))
+    time = _parse_time(time)
+    day_path = _path_for_day(_day_for_time(time))
     tasks = _load_day(day_path)
     task_id = _new_id()
     tasks.append({"id": task_id, "name": name, "location": location,
@@ -112,17 +121,19 @@ def query(day: str) -> list[dict]:
 
 
 def update(id: int, name: Optional[str] = None, location: Optional[str] = None,
-           time: Optional[int] = None, during: Optional[int] = None,
+           time: Optional[str] = None, during: Optional[int] = None,
            priority: Optional[str] = None) -> None:
     """修改指定 ID 的日程；修改时间时自动移动到对应日期文件。"""
     path, tasks, index = _find_task(id)
     task = tasks[index]
+    if time is not None:
+        time = _parse_time(time)
     changes = {"name": name, "location": location, "time": time,
                "during": during, "priority": priority}
     task.update({key: value for key, value in changes.items() if value is not None})
 
     if time is not None:
-        destination = _path_for_day(_day_for_timestamp(time))
+        destination = _path_for_day(_day_for_time(time))
         if destination != path:
             tasks.pop(index)
             _save_day(path, tasks)
@@ -142,7 +153,7 @@ def main() -> int:
     add_parser = commands.add_parser("add", help="创建日程")
     add_parser.add_argument("name")
     add_parser.add_argument("location")
-    add_parser.add_argument("time", type=int, help="Unix 时间戳")
+    add_parser.add_argument("time", help="开始时间，格式 YYYY-MM-DD-HH-MM")
     add_parser.add_argument("during", type=int, help="持续分钟数")
     add_parser.add_argument("priority")
 
@@ -156,7 +167,7 @@ def main() -> int:
     update_parser.add_argument("id", type=int)
     update_parser.add_argument("--name")
     update_parser.add_argument("--location")
-    update_parser.add_argument("--time", type=int)
+    update_parser.add_argument("--time", help="开始时间，格式 YYYY-MM-DD-HH-MM")
     update_parser.add_argument("--during", type=int)
     update_parser.add_argument("--priority")
     args = parser.parse_args()
