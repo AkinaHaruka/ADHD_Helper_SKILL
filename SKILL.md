@@ -67,7 +67,7 @@ python3 ./scripts/classes.py query {YYYY-MM-DD}
 python3 ./scripts/classes.py reset
 ```
 
-`reset` 删除已导入的课程表。
+`reset` 删除已导入的课程表。 返回 `[]` 是没有课程而不是未导入。
 
 ### 日程
 
