@@ -115,4 +115,5 @@ ADHDHelper.SKILL/
 ## 致谢
 
 - 感谢 [airline233/WakeUpDecoder](https://github.com/airline233/WakeUpDecoder)（本项目的 Git submodule），提供 WakeUp 课程表分享数据的解析能力。
+- 感谢 [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)，本技能的输出方式借鉴并融入了其行动优先、分步呈现、跨轮状态、具体估时与可见进度等原则。
 - 感谢 **Codex** 与 **Google Gemini** 在项目开发过程中的协作支持。
