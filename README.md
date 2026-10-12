@@ -70,7 +70,7 @@ Windows 下，应让 Agent 调用 `.\.venv\Scripts\python.exe`，或在已激活
 安装主脚本与子模块的依赖：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r scripts/requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pip install -r scripts/depends/wakeup_decoder/requirements.txt
 ```
 
