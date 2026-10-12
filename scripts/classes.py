@@ -8,11 +8,11 @@ import sys
 from datetime import date, datetime
 from json import JSONDecodeError
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CLASSES_FILE = SCRIPT_DIR / "data" / "classes" /"classes.json"
+CLASSES_FILE = SCRIPT_DIR / "data" / "classes" / "classes.json"
 
 
 def fetch(share_id: str) -> List[dict]:
@@ -48,8 +48,9 @@ def _clean_schedule(raw_data: List[dict]) -> dict:
     """只保留按日期查询所需的字段，去除 WakeUp 的展示配置。"""
     if len(raw_data) < 5 or not isinstance(raw_data[2], dict):
         raise ValueError("WakeUp 返回的课程表数据格式不正确。")
-    table, courses, lessons = raw_data[2], raw_data[3], raw_data[4]
-    if not isinstance(courses, list) or not isinstance(lessons, list) or not table.get("startDate"):
+    node_times, table, courses, lessons = raw_data[1], raw_data[2], raw_data[3], raw_data[4]
+    if (not isinstance(node_times, list) or not isinstance(courses, list)
+            or not isinstance(lessons, list) or not table.get("startDate")):
         raise ValueError("WakeUp 返回的课程表数据格式不正确。")
 
     names = {item["id"]: item.get("courseName", "未命名课程") for item in courses
@@ -64,9 +65,17 @@ def _clean_schedule(raw_data: List[dict]) -> dict:
             "step": lesson.get("step", 1), "startNode": lesson.get("startNode"),
             "room": lesson.get("room", ""), "teacher": lesson.get("teacher", ""),
             "courseNote": lesson.get("courseNote", ""),
+            "ownTime": lesson.get("ownTime", False),
+            "customStartTime": lesson.get("startTime", ""),
+            "customEndTime": lesson.get("endTime", ""),
         })
+    times = {
+        str(item["node"]): {"startTime": item.get("startTime", ""), "endTime": item.get("endTime", "")}
+        for item in node_times
+        if isinstance(item, dict) and isinstance(item.get("node"), int)
+    }
     return {"startDate": table["startDate"], "tableName": table.get("tableName", "课程表"),
-            "courses": cleaned}
+            "nodeTimes": times, "courses": cleaned}
 
 
 def _load_schedule() -> Optional[dict]:
@@ -98,6 +107,7 @@ def query(day: str) -> List[dict]:
     week_index, weekday_index = divmod(offset, 7)
     week, weekday = week_index + 1, weekday_index + 1  # WakeUp: 周一为 1
     result = []
+    node_times = schedule.get("nodeTimes", {})
     for lesson in schedule.get("courses", []):
         start_week, end_week, step = (lesson.get(key) for key in ("startWeek", "endWeek", "step"))
         if not all(isinstance(value, int) for value in (start_week, end_week, step)) or step < 1:
@@ -109,6 +119,17 @@ def query(day: str) -> List[dict]:
             item["week"] = week
             if isinstance(item.get("startNode"), int):
                 item["endNode"] = item["startNode"] + step - 1
+                start_slot = node_times.get(str(item["startNode"]), {})
+                end_slot = node_times.get(str(item["endNode"]), {})
+                if item.get("ownTime") and item.get("customStartTime"):
+                    item["startTime"] = item["customStartTime"]
+                    item["endTime"] = item.get("customEndTime", "")
+                else:
+                    item["startTime"] = start_slot.get("startTime", "")
+                    item["endTime"] = end_slot.get("endTime", "")
+            item.pop("ownTime", None)
+            item.pop("customStartTime", None)
+            item.pop("customEndTime", None)
             result.append(item)
     return sorted(result, key=lambda item: (item.get("startNode") is None, item.get("startNode", 0)))
 
