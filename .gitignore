@@ -1,1 +1,4 @@
-scripts/data/*
+mcp/data/*
+__pycache__/
+*.py[cod]
+.venv/

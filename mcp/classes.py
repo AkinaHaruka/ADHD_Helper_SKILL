@@ -1,6 +1,5 @@
-"""WakeUp 课程表的导入、查询和重置命令行工具。"""
+"""WakeUp 课程表的导入、查询和存储逻辑，供 MCP 服务器直接调用。"""
 
-import argparse
 import json
 import os
 import subprocess
@@ -8,29 +7,36 @@ import sys
 from datetime import date, datetime
 from json import JSONDecodeError
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CLASSES_FILE = SCRIPT_DIR / "data" / "classes" / "classes.json"
+DECODER_DIR = SCRIPT_DIR / "depends" / "wakeup_decoder"
+CLASSES_FILE = Path(os.environ.get("WAKEUP_DATA_DIR", SCRIPT_DIR / "data" / "classes")) / "classes.json"
 
 
 def fetch(share_id: str) -> List[dict]:
     """从 WakeUp 分享读取课程表，失败时抛出带原因的异常。"""
-    command = [
-        sys.executable,
-        str(SCRIPT_DIR / "depends" / "wakeup_decoder" / "main.py"),
-        "--code", share_id, "--android-id", "0000000000000000",
-    ]
+    if not share_id.strip():
+        raise ValueError("WakeUp 课程表分享码不能为空。")
+    entrypoint = DECODER_DIR / "main.py"
+    if not entrypoint.is_file():
+        raise RuntimeError("WakeUp 解码器尚未初始化，请先执行 git submodule update --init --recursive。")
     try:
         result = subprocess.run(
-            command,
+            [sys.executable, str(entrypoint), "--code", share_id,
+             "--android-id", "0000000000000000"],
+            cwd=DECODER_DIR,
             capture_output=True,
             check=False,
             text=True,
             encoding="utf-8",
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            timeout=90,
         )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("WakeUp 解析器执行超时，请稍后重试。") from error
     except OSError as error:
         raise RuntimeError(f"无法启动 WakeUp 解析器：{error}") from error
     if result.returncode != 0:
@@ -40,7 +46,7 @@ def fetch(share_id: str) -> List[dict]:
     try:
         data = json.loads(result.stdout)["shareData"].split("\n")
         return [json.loads(item) for item in data]
-    except (JSONDecodeError, KeyError, TypeError) as error:
+    except (JSONDecodeError, KeyError, TypeError, AttributeError) as error:
         raise ValueError("WakeUp 返回的课程表数据格式不正确。") from error
 
 
@@ -98,7 +104,7 @@ def query(day: str) -> List[dict]:
     """查询某日课程；未导入课程表时抛出 ``FileNotFoundError``。"""
     schedule = _load_schedule()
     if schedule is None:
-        raise FileNotFoundError("尚未导入课程表，请先执行 classes.py fetch {shareID}。")
+        raise FileNotFoundError("尚未导入课程表，请先调用 wakeup_fetch 导入 WakeUp 分享码。")
 
     target, start = _parse_date(day), _parse_date(schedule["startDate"])
     offset = (target - start).days
@@ -137,48 +143,24 @@ def query(day: str) -> List[dict]:
 def _save_schedule(raw_data: List[dict]) -> dict:
     schedule = _clean_schedule(raw_data)
     CLASSES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with CLASSES_FILE.open("w", encoding="utf-8") as file:
-        json.dump(schedule, file, ensure_ascii=False, indent=2)
-        file.write("\n")
+    temporary = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=CLASSES_FILE.parent,
+                                suffix=".tmp", delete=False) as file:
+            temporary = Path(file.name)
+            json.dump(schedule, file, ensure_ascii=False, indent=2)
+            file.write("\n")
+        os.replace(temporary, CLASSES_FILE)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return schedule
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="WakeUp 课程表工具")
-    commands = parser.add_subparsers(dest="command", required=True)
-    fetch_parser = commands.add_parser("fetch", help="导入 WakeUp 分享课程表")
-    fetch_parser.add_argument("share_id", help="WakeUp 课程表分享码")
-    query_parser = commands.add_parser("query", help="查询某天的课程")
-    query_parser.add_argument("day", help="日期，格式 YYYY-MM-DD")
-    commands.add_parser("reset", help="删除已导入的课程表")
-    args = parser.parse_args()
-
-    if args.command == "fetch":
-        try:
-            raw_data = fetch(args.share_id)
-            schedule = _save_schedule(raw_data)
-        except (RuntimeError, ValueError) as error:
-            print(f"课程表导入失败：{error}", file=sys.stderr)
-            return 1
-        print(f"课程表“{schedule['tableName']}”已导入。")
-        return 0
-
-    if args.command == "query":
-        try:
-            classes = query(args.day)
-        except (FileNotFoundError, ValueError, KeyError) as error:
-            print(error, file=sys.stderr)
-            return 1
-        print(json.dumps(classes, ensure_ascii=False, indent=2))
-        return 0
-
-    if CLASSES_FILE.exists():
+def reset() -> bool:
+    """删除已导入的课程表，返回是否实际删除了文件。"""
+    try:
         CLASSES_FILE.unlink()
-        print("已删除课程表，可重新执行 fetch 导入。")
-    else:
-        print("当前没有已导入的课程表，可直接执行 fetch 导入。")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    except FileNotFoundError:
+        return False
+    return True

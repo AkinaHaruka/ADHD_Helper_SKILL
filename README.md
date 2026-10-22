@@ -7,9 +7,9 @@
 
 ---
 
-面向 Agent 的 ADHD 支持 Skill。将 [SKILL.md](SKILL.md) 提供给 Agent 后，Agent 会以低负担、非评判、一次只推进一步的方式，帮助 ADHD 用户应对任务启动、注意力中断、日程、物品和日常过渡；并可按需调用本仓库的本地脚本管理课程表与日程。
+面向 Agent 的 ADHD 支持 Skill。将 [SKILL.md](SKILL.md) 提供给 Agent 后，Agent 会以低负担、非评判、一次只推进一步的方式，帮助 ADHD 用户应对任务启动、注意力中断、日程、物品和日常过渡；可选接入本仓库的 WakeUp MCP 服务器管理课程表，日程与记忆由 Agent 宿主工具管理。
 
-它不是一个面向终端用户的 CLI 产品：`scripts/` 是供 Agent 执行的工具实现，用户主要通过与 Agent 对话来使用本 Skill。
+用户主要通过与 Agent 对话来使用本 Skill；课程表操作通过 MCP 协议调用，不再使用 `classes.py fetch/query/reset` 命令。
 
 ## Agent 能提供的支持
 
@@ -17,10 +17,10 @@
 - **启动与专注**：把抽象目标拆成下一步物理动作；在被打断后从上一处继续；按用户状态提供有限时段、环境调整或“最低完成版”。
 - **收集突发想法**：将突然想到的待办、点子或担心先简短记录，默认不打断当前任务，之后再少量清理。
 - **日常过渡**：在起床、睡前、出门、迟到或活动切换时，优先提示下一站、必要物品与眼下第一步，并考虑准备、通勤和缓冲时间。
-- **日程与课程表**：在信息充分且涉及创建、修改、删除时得到用户确认后，查询或管理本地日程；支持通过 WakeUp 分享码导入课程表并按日期查询。
+- **日程与课程表**：通过宿主工具查询和管理日程；存在 WakeUp MCP 工具时，支持通过分享码导入课程表并按日期查询，否则从宿主日程工具查询课程。
 - **物品与用户记忆**：只在用户主动提供或明确同意后，通过 Agent 宿主提供的记忆工具保存长期有用的偏好、固定安排及物品清单。
 
-完整对话策略、边界、命令参数与工具调用约定以 [SKILL.md](SKILL.md) 为准。
+完整对话策略、边界与工具调用约定以 [SKILL.md](SKILL.md) 为准。
 
 ## Agent 行为边界
 
@@ -38,7 +38,7 @@
 
 ### 1. 获取 Skill 及子模块
 
-此仓库的课程表导入能力依赖 Git submodule [airline233/WakeUpDecoder](https://github.com/airline233/WakeUpDecoder)。克隆时应递归初始化：
+WakeUp MCP 为可选组件，不接入时直接加载 [SKILL.md](SKILL.md)，课程查询使用宿主日程工具。需要接入时，课程表导入依赖 Git submodule [airline233/WakeUpDecoder](https://github.com/airline233/WakeUpDecoder)。克隆时应递归初始化：
 
 ```powershell
 git clone --recurse-submodules <仓库地址>
@@ -51,67 +51,97 @@ cd ADHDHelper.SKILL
 git submodule update --init --recursive
 ```
 
-若未初始化子模块，Agent 仍能进行纯对话支持及本地日程管理，但无法执行 WakeUp 课程表导入。
+若未初始化子模块，MCP 仍可启动、查询已有课程表及重置，但无法导入新课程表。
 
 ### 2. 配置 Agent 使用的 Python 解释器
 
-运行 `scripts/` 的 Agent 宿主需要 Python **3.9 或更高版本**。推荐为本 Skill 创建独立虚拟环境，并让 Agent 的命令执行环境使用该解释器：
+MCP 服务器需要 Python **3.10 或更高版本**。推荐创建独立虚拟环境，让宿主以该解释器启动服务器：
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 ```
 
-Windows 下，应让 Agent 调用 `.\.venv\Scripts\python.exe`，或在已激活虚拟环境后调用 `python`；不要假定 `python3` 一定可用。macOS/Linux 可使用 `.venv/bin/python`。
+Windows 下使用 `.venv\Scripts\python.exe`，macOS/Linux 使用 `.venv/bin/python`。宿主配置中的解释器及服务器入口均应使用绝对路径，不依赖宿主的工作目录。
 
 若使用 PyCharm 维护或调试本 Skill：打开 **File → Settings → Project → Python Interpreter**，通过 **Add Interpreter → Add Local Interpreter → Existing** 选择 `.venv\Scripts\python.exe`。也可选择 **Virtualenv** 由 PyCharm 新建 `.venv`。
 
-### 3. 安装 Agent 工具依赖
+### 3. 安装依赖
 
-安装主脚本与子模块的依赖：
+安装服务器与子模块声明的依赖：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install -r scripts/depends/wakeup_decoder/requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r mcp/depends/wakeup_decoder/requirements.txt
 ```
 
-### 4. 将 Skill 暴露给 Agent
+子模块已自带 WakeUp APK，无需自行准备或配置。MCP 服务器将解码工作委托给子模块现有入口，以子模块目录为工作目录，让其自行发现 APK 并完成解码。
 
-将 [SKILL.md](SKILL.md) 作为 Agent 的 Skill 指令加载，并确保 Agent 的工作目录为仓库根目录、可调用上一步配置的 Python 解释器。Agent 应遵循 `SKILL.md` 中的命令格式：
+### 4. 配置 MCP 服务器并加载 Skill
 
-```text
-<python> ./scripts/classes.py fetch <WakeUp 分享码>
-<python> ./scripts/classes.py query <YYYY-MM-DD>
-<python> ./scripts/tasks.py query <YYYY-MM-DD>
-<python> ./scripts/tasks.py add <名称> <地点> <Unix 秒级时间戳> <持续分钟数> <优先级>
+将 [SKILL.md](SKILL.md) 作为 Agent 的 Skill 指令加载。在支持 stdio MCP 的宿主中添加服务器，例如：
+
+```json
+{
+  "mcpServers": {
+    "wakeup": {
+      "command": "E:/PyCharm/ADHDHelper.SKILL/.venv/Scripts/python.exe",
+      "args": ["E:/PyCharm/ADHDHelper.SKILL/mcp/wakeup_mcp.py"]
+    }
+  }
+}
 ```
 
-其中 `<python>` 应替换为宿主实际配置的解释器路径。对会改变数据的命令，Agent 必须先遵守 `SKILL.md` 规定的确认流程。
+将示例路径替换为实际路径；具体配置位置和格式以宿主为准。宿主只在启动时运行 Python 服务器，之后所有课程操作均通过 MCP 的 `tools/list` 和 `tools/call` 完成。服务器使用 [官方 MCP Python SDK 的 FastMCP](https://py.sdk.modelcontextprotocol.io/v1/)，依赖限制为 `mcp>=1.28,<2`。
+
+| 工具 | 参数 | 返回结果 |
+| --- | --- | --- |
+| `wakeup_fetch` | `share_id: string` | 导入并覆盖课程表，返回 `tableName` 和 `courseCount` |
+| `wakeup_query` | `day: string`，`YYYY-MM-DD` | 课程列表，包含节次、时间、地点等；`[]` 表示无课 |
+| `wakeup_reset` | 无 | 删除课程表，返回 `deleted`；重复调用返回 `false` |
+
+SDK 为课程列表提供结构化结果 `{"result": [...]}`，其中 `result: []` 表示当天无课。未导入、日期错误、导入失败等通过 MCP 的 `isError` 返回，不作为空课表处理；失败的导入不会替换已有课表。重置前遵守 Skill 中的确认约定。
+
+可选环境变量：
+
+| 变量 | 用途与默认值 |
+| --- | --- |
+| `WAKEUP_DATA_DIR` | 课表存储目录；默认 `mcp/data/classes/`，沿用原课表；多用户部署需为每个用户设置不同的绝对路径 |
+
+Skill 根据实际可用工具选择课程来源：有 `wakeup_query` 时查询 WakeUp，否则从宿主日程工具查询；不回退到 CLI。日程的查询、创建、修改、删除始终通过宿主工具进行。
 
 用户记忆与物品清单由宿主提供的记忆工具管理。宿主应向 Agent 暴露相应工具及其接口、权限约定；本 Skill 不绑定特定工具名称。未提供记忆工具时，Agent 仍可使用当前对话中的信息提供支持，但无法持久化用户记忆。
 
 ## 持久化数据与隐私
 
-用户记忆由 Agent 宿主的记忆工具持久化，存储位置、访问权限及保留策略由宿主管理，不写入 Skill 包。本地课程表与日程数据存储在 `scripts/data/`：
+用户记忆和日程由 Agent 宿主的工具持久化，存储位置、访问权限及保留策略由宿主管理，不写入 Skill 包。课程表由 MCP 服务器存储：
 
 | 路径 | 内容 | 写入时机 |
 | --- | --- | --- |
-| `scripts/data/classes/classes.json` | 导入后清洗的 WakeUp 课程表 | `classes.py fetch` |
-| `scripts/data/tasks/YYYYMMDD.json` | 按日期保存的本地日程 | `tasks.py` 增改删 |
+| `mcp/data/classes/classes.json`（或 `WAKEUP_DATA_DIR/classes.json`） | 导入后清洗的 WakeUp 课程表 | `wakeup_fetch` |
 
 ## 项目结构
 
 ```text
 ADHDHelper.SKILL/
 ├── SKILL.md                         # Agent 的核心行为、边界与工具约定
-├── scripts/
-│   ├── classes.py                   # Agent 调用的 WakeUp 课程表工具
-│   ├── tasks.py                     # Agent 调用的本地日程工具
-│   ├── requirments.txt              # 主工具依赖（仓库既有拼写）
+├── requirements.txt                # MCP 服务器与解码器依赖
+├── mcp/
+│   ├── wakeup_mcp.py                # stdio MCP 服务器入口，暴露三个 wakeup_* 工具
+│   ├── classes.py                   # 课程表业务逻辑，解码委托给子模块现有入口
 │   ├── data/                        # 运行时个人数据，已忽略
 │   └── depends/wakeup_decoder/      # Git submodule：WakeUpDecoder
+├── tests/test_wakeup_mcp.py         # 导入逻辑与 stdio MCP 集成测试
 └── .gitmodules                      # 子模块来源配置
 ```
+
+使用配置好的解释器运行验证：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+测试使用临时目录及模拟上游数据，不读取或修改已有课表，不连接真实 WakeUp 服务。
 
 ## 致谢
 
