@@ -1,0 +1,14 @@
+[project]
+name = "wakeup-mcp"
+version = "0.1.0"
+description = "WakeUp 课程表 MCP 服务器"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.28,<2",
+    "pydantic>=2.11,<3",
+    "cryptography",
+    "requests",
+]
+
+[tool.uv]
+package = false

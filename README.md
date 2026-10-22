@@ -53,31 +53,20 @@ git submodule update --init --recursive
 
 若未初始化子模块，MCP 仍可启动、查询已有课程表及重置，但无法导入新课程表。
 
-### 2. 配置 Agent 使用的 Python 解释器
+### 2. 使用 uv 启动
 
-MCP 服务器需要 Python **3.10 或更高版本**。推荐创建独立虚拟环境，让宿主以该解释器启动服务器：
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-```
-
-Windows 下使用 `.venv\Scripts\python.exe`，macOS/Linux 使用 `.venv/bin/python`。宿主配置中的解释器及服务器入口均应使用绝对路径，不依赖宿主的工作目录。
-
-若使用 PyCharm 维护或调试本 Skill：打开 **File → Settings → Project → Python Interpreter**，通过 **Add Interpreter → Add Local Interpreter → Existing** 选择 `.venv\Scripts\python.exe`。也可选择 **Virtualenv** 由 PyCharm 新建 `.venv`。
-
-### 3. 安装依赖
-
-安装服务器与子模块声明的依赖：
+安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 后，在 `mcp/` 目录运行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install -r mcp/depends/wakeup_decoder/requirements.txt
+cd mcp
+uv run wakeup_mcp.py
 ```
+
+`mcp/pyproject.toml` 声明 Python **3.10 或更高版本**及 MCP、解码器所需依赖。`uv run` 自动创建 `mcp/.venv/` 并同步依赖，无需手动创建虚拟环境或安装 pip 包。依赖版本记录在 `mcp/uv.lock` 中。
 
 子模块已自带 WakeUp APK，无需自行准备或配置。MCP 服务器将解码工作委托给子模块现有入口，以子模块目录为工作目录，让其自行发现 APK 并完成解码。
 
-### 4. 配置 MCP 服务器并加载 Skill
+### 3. 配置 MCP 服务器并加载 Skill
 
 将 [SKILL.md](SKILL.md) 作为 Agent 的 Skill 指令加载。在支持 stdio MCP 的宿主中添加服务器，例如：
 
@@ -85,14 +74,14 @@ Windows 下使用 `.venv\Scripts\python.exe`，macOS/Linux 使用 `.venv/bin/pyt
 {
   "mcpServers": {
     "wakeup": {
-      "command": "E:/PyCharm/ADHDHelper.SKILL/.venv/Scripts/python.exe",
-      "args": ["E:/PyCharm/ADHDHelper.SKILL/mcp/wakeup_mcp.py"]
+      "command": "uv",
+      "args": ["run", "--directory", "E:/PyCharm/ADHDHelper.SKILL/mcp", "wakeup_mcp.py"]
     }
   }
 }
 ```
 
-将示例路径替换为实际路径；具体配置位置和格式以宿主为准。宿主只在启动时运行 Python 服务器，之后所有课程操作均通过 MCP 的 `tools/list` 和 `tools/call` 完成。服务器使用 [官方 MCP Python SDK 的 FastMCP](https://py.sdk.modelcontextprotocol.io/v1/)，依赖限制为 `mcp>=1.28,<2`。
+将示例路径替换为实际路径，并确保宿主能找到 `uv`（也可将 `command` 改为 uv 的绝对路径）；具体配置位置和格式以宿主为准。`--directory` 让服务器不依赖宿主工作目录。宿主只在启动时运行服务器，之后所有课程操作均通过 MCP 的 `tools/list` 和 `tools/call` 完成。服务器使用 [官方 MCP Python SDK 的 FastMCP](https://py.sdk.modelcontextprotocol.io/v1/)，依赖限制为 `mcp>=1.28,<2`。
 
 | 工具 | 参数 | 返回结果 |
 | --- | --- | --- |
@@ -127,6 +116,8 @@ ADHDHelper.SKILL/
 ├── SKILL.md                         # Agent 的核心行为、边界与工具约定
 ├── requirements.txt                # MCP 服务器与解码器依赖
 ├── mcp/
+│   ├── pyproject.toml              # uv 项目配置和依赖
+│   ├── uv.lock                     # 锁定依赖版本
 │   ├── wakeup_mcp.py                # stdio MCP 服务器入口，暴露三个 wakeup_* 工具
 │   ├── classes.py                   # 课程表业务逻辑，解码委托给子模块现有入口
 │   ├── data/                        # 运行时个人数据，已忽略
@@ -135,10 +126,10 @@ ADHDHelper.SKILL/
 └── .gitmodules                      # 子模块来源配置
 ```
 
-使用配置好的解释器运行验证：
+从仓库根目录运行验证：
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+uv run --project mcp python -m unittest discover -s tests -v
 ```
 
 测试使用临时目录及模拟上游数据，不读取或修改已有课表，不连接真实 WakeUp 服务。
